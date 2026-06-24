@@ -18,11 +18,16 @@ local baseRotation = nil
 local currentYaw = 0
 local currentPitchTilt = 0
 local currentRollTilt = 0
+local currentAimPitch = 0
 local shipVelocity = Vector3.new(0, 0, 0) -- Track ship velocity
 local flightDirection = nil
 local facingDirection = nil
 local hasStarted = false
 local camera = workspace.CurrentCamera
+local wasBoostPressed = false
+local boostCooldownRemaining = 0
+local boostTimeRemaining = 0
+local boostDirection = nil
 
 local function hasUsableShipPart(ship)
 	if ship:IsA("BasePart") then
@@ -67,6 +72,15 @@ local function getDirectionFromYaw(yaw)
 	return Vector3.new(-math.sin(yaw), 0, -math.cos(yaw))
 end
 
+local function getDirectionFromYawPitch(yaw, pitch)
+	local horizontal = math.cos(pitch)
+	return Vector3.new(
+		-math.sin(yaw) * horizontal,
+		math.sin(pitch),
+		-math.cos(yaw) * horizontal
+	)
+end
+
 -- Wait for and get the ship
 local function getShip()
 	-- Keep trying to find the ship (server spawns it after character loads)
@@ -109,12 +123,28 @@ local function updateShip(input, deltaTime)
 	local cframe = renderCFrame or getShipCFrame(currentShip)
 	local position = cframe.Position
 	local up = Vector3.new(0, 1, 0)
+	local lookDelta = InputController:ConsumeLookDelta()
 
-	currentYaw -= input.moveX * config.turnSpeed * deltaTime
-	facingDirection = getDirectionFromYaw(currentYaw)
-	
-	-- Apply boost multiplier
-	local speedMultiplier = input.boost and (config.boostSpeed / config.maxSpeed) or 1
+	currentYaw -= (input.moveX * config.turnSpeed * deltaTime)
+		+ (lookDelta.X * (config.mouseYawSensitivity or 0.0035))
+		+ ((input.lookX or 0) * (config.controllerYawSpeed or 2.8) * deltaTime)
+	currentAimPitch = math.clamp(
+		currentAimPitch
+			- lookDelta.Y * (config.mousePitchSensitivity or 0.0025)
+			+ ((input.lookY or 0) * (config.controllerPitchSpeed or 2) * deltaTime),
+		-(config.maxCameraPitch or math.rad(28)),
+		config.maxCameraPitch or math.rad(28)
+	)
+	facingDirection = getDirectionFromYawPitch(currentYaw, currentAimPitch)
+
+	boostCooldownRemaining = math.max(boostCooldownRemaining - deltaTime, 0)
+	if input.boost and not wasBoostPressed and boostCooldownRemaining <= 0 then
+		boostDirection = facingDirection
+		boostTimeRemaining = config.boostDashDuration or 0.25
+		boostCooldownRemaining = config.boostCooldown or 1.25
+	end
+	wasBoostPressed = input.boost
+
 	local forwardMultiplier = input.moveZ < 0 and (config.forwardSpeedMultiplier or 1) or 1
 	local backwardMultiplier = input.moveZ > 0 and (config.backwardSpeedMultiplier or 1) or 1
 
@@ -124,11 +154,12 @@ local function updateShip(input, deltaTime)
 		(facingDirection * -input.moveZ * forwardMultiplier * backwardMultiplier)
 	)
 
-	if input.boost and movement.Magnitude < 0.01 then
-		movement = facingDirection
+	local desiredVelocity = movement * config.maxSpeed
+	if boostTimeRemaining > 0 and boostDirection then
+		local dashSpeed = (config.boostDashDistance or 35) / (config.boostDashDuration or 0.25)
+		desiredVelocity += boostDirection * dashSpeed
+		boostTimeRemaining = math.max(boostTimeRemaining - deltaTime, 0)
 	end
-
-	local desiredVelocity = movement * config.maxSpeed * speedMultiplier
 
 	-- Smooth acceleration
 	local accelerationAlpha = math.clamp(deltaTime * config.acceleration / 50, 0, 1)
@@ -151,7 +182,7 @@ local function updateShip(input, deltaTime)
 
 		newCFrame = CFrame.new(newPosition)
 			* CFrame.Angles(0, currentYaw + (config.visualForwardYawOffset or 0), 0)
-			* CFrame.Angles(currentPitchTilt, 0, currentRollTilt)
+			* CFrame.Angles(currentAimPitch + currentPitchTilt, 0, currentRollTilt)
 			* baseRotation
 	end
 
@@ -182,6 +213,7 @@ function ShipController:Start()
 		currentYaw = getYawFromDirection(facingDirection)
 		currentPitchTilt = 0
 		currentRollTilt = 0
+		currentAimPitch = 0
 		-- Start the update loop
 		RunService:BindToRenderStep("FlyFightShipMovement", Enum.RenderPriority.Input.Value, update)
 	else
@@ -212,7 +244,7 @@ function ShipController:GetCameraTarget()
 		return nil, nil
 	end
 
-	return cframe.Position, facingDirection
+	return cframe.Position, facingDirection, currentAimPitch
 end
 
 return ShipController

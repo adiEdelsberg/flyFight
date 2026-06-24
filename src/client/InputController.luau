@@ -6,6 +6,7 @@ local InputController = {}
 
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local BoardingController = nil
 
@@ -16,7 +17,11 @@ InputController.inputState = {
 	pitch = 0, -- -1 to 1 (up/down)
 	boost = false,
 	fire = false,
+	lookX = 0, -- -1 to 1 (aim left/right)
+	lookY = 0, -- -1 to 1 (aim up/down)
 }
+
+local lookDelta = Vector2.new(0, 0)
 
 -- Input callbacks (for other systems to subscribe)
 local inputCallbacks = {}
@@ -43,6 +48,20 @@ end
 
 local function getInputResult()
 	return isBoarded() and Enum.ContextActionResult.Sink or Enum.ContextActionResult.Pass
+end
+
+local function applyDeadzone(value, deadzone)
+	if math.abs(value) < deadzone then
+		return 0
+	end
+
+	return value
+end
+
+function InputController:ConsumeLookDelta()
+	local delta = lookDelta
+	lookDelta = Vector2.new(0, 0)
+	return delta
 end
 
 -- Setup keyboard controls
@@ -163,6 +182,16 @@ local function setupKeyboardInput()
 			fireCallbacks()
 		end
 	end)
+
+	UserInputService.InputChanged:Connect(function(input, gameProcessed)
+		if gameProcessed or not isBoarded() then
+			return
+		end
+
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			lookDelta += Vector2.new(input.Delta.X, input.Delta.Y)
+		end
+	end)
 end
 
 -- Setup controller input
@@ -182,7 +211,8 @@ local function setupControllerInput()
 			-- Right stick for pitch
 			if input.KeyCode == Enum.KeyCode.Gamepad1RightThumbstick then
 				local position = input.Position
-				InputController.inputState.pitch = -position.Y
+				InputController.inputState.lookX = applyDeadzone(position.X, 0.12)
+				InputController.inputState.lookY = applyDeadzone(position.Y, 0.12)
 				fireCallbacks()
 			end
 		end
@@ -190,24 +220,32 @@ local function setupControllerInput()
 	
 	-- Boost with R1
 	ContextActionService:BindAction("Gamepad_Boost", function(actionName, inputState, inputObject)
+		if not isBoarded() then
+			return Enum.ContextActionResult.Pass
+		end
+
 		if inputState == Enum.UserInputState.Begin then
 			InputController.inputState.boost = true
 		elseif inputState == Enum.UserInputState.End then
 			InputController.inputState.boost = false
 		end
 		fireCallbacks()
-		return Enum.ContextActionResult.Sink
+		return getInputResult()
 	end, false, Enum.KeyCode.ButtonR1)
 	
 	-- Fire with R2
 	ContextActionService:BindAction("Gamepad_Fire", function(actionName, inputState, inputObject)
+		if not isBoarded() then
+			return Enum.ContextActionResult.Pass
+		end
+
 		if inputState == Enum.UserInputState.Begin then
 			InputController.inputState.fire = true
 		elseif inputState == Enum.UserInputState.End then
 			InputController.inputState.fire = false
 		end
 		fireCallbacks()
-		return Enum.ContextActionResult.Sink
+		return getInputResult()
 	end, false, Enum.KeyCode.ButtonR2)
 end
 
@@ -222,6 +260,17 @@ function InputController:Start()
 	setupKeyboardInput()
 	setupControllerInput()
 	-- setupMobileInput() -- TODO when needed
+
+	RunService:BindToRenderStep("FlyFightMouseLock", Enum.RenderPriority.Input.Value - 1, function()
+		if isBoarded() then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+			UserInputService.MouseIconEnabled = false
+		else
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			UserInputService.MouseIconEnabled = true
+			lookDelta = Vector2.new(0, 0)
+		end
+	end)
 end
 
 return InputController

@@ -59,9 +59,10 @@ local function updateCamera()
 
 	local shipPos = nil
 	local followDirection = nil
+	local cameraPitch = 0
 
 	if targetProvider then
-		shipPos, followDirection = targetProvider()
+		shipPos, followDirection, cameraPitch = targetProvider()
 	end
 
 	if not shipPos or not followDirection then
@@ -83,8 +84,10 @@ local function updateCamera()
 	end
 	
 	-- Calculate desired camera position (behind and above the ship)
-	local desiredCameraPos = shipPos - followDirection * CAMERA_DISTANCE + Vector3.new(0, CAMERA_HEIGHT, 0)
-	local desiredCameraFocus = shipPos + followDirection * 8 + Vector3.new(0, 5, 0)
+	local pitchDistance = math.cos(cameraPitch) * CAMERA_DISTANCE
+	local pitchHeight = math.sin(cameraPitch) * CAMERA_DISTANCE
+	local desiredCameraPos = shipPos - followDirection * pitchDistance + Vector3.new(0, CAMERA_HEIGHT + pitchHeight, 0)
+	local desiredCameraFocus = shipPos + followDirection * 12 + Vector3.new(0, 5 + pitchHeight * 0.4, 0)
 	
 	-- Smoothly move camera
 	local currentCameraPos = camera.CFrame.Position

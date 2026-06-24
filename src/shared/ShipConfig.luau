@@ -18,15 +18,20 @@ ShipConfig.FrogShip = {
 	maxPitchTilt = math.rad(8),
 	maxRollTilt = math.rad(12),
 	tiltResponsiveness = 8,
+	mouseYawSensitivity = 0.0035,
+	mousePitchSensitivity = 0.0025,
+	controllerYawSpeed = 2.8,
+	controllerPitchSpeed = 2,
+	maxCameraPitch = math.rad(28),
 	
 	-- Vertical movement
 	ascendSpeed = 30,
 	descendSpeed = 30,
 	
 	-- Boost
-	boostSpeed = 100,
-	boostDuration = 1,
-	boostCooldown = 2,
+	boostDashDistance = 200,
+	boostDashDuration = 0.5,
+	boostCooldown = 1.25,
 	
 	-- Combat
 	health = 1, -- One hit = one kill
